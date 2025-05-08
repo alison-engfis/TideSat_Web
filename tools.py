@@ -121,7 +121,7 @@ def mostrar_cabecalho_tidesat(logotipo):
 
             # HTML para alinhar "Powered by" e o logo lado a lado
             html = f"""
-                <div style='display: flex; justify-content: center; align-items: center; gap: 15px;'>
+                <div style='display: flex; justify-content: center; align-items: center; gap: 8px;'>
                     <span style='font-size: 16px; font-style: italic; font-weight: bold; color: gray;'>POWERED BY</span>
                     <a href="https://www.tidesatglobal.com/" target="_blank">
                         <img src='data:image/webp;base64,{imagem_base64}' width='100'>
@@ -129,6 +129,8 @@ def mostrar_cabecalho_tidesat(logotipo):
                 </div>
             """
             st.markdown(html, unsafe_allow_html=True)
+
+            st.markdown("<br>", unsafe_allow_html=True)
 
 # Função para carregar os dados dos links
 def carregar_dados(url):
