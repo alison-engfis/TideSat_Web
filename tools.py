@@ -118,9 +118,9 @@ def mostrar_cabecalho_tidesat(logotipo):
             caminho_imagem = "TideSat_logo.webp"
             imagem_base64 = converter_base64(caminho_imagem)
             html = f"""
-                <div style='text-align: center;'>
-                    <img src='data:image/webp;base64,{imagem_base64}' width='180'>
-                    <p style='font-size: 16px; font-weight: bold; color: gray;'>POWERED BY TIDESAT</p>
+                <div style='text-align: left;'>
+                    <img src='data:image/webp;base64,{imagem_base64}' width='100'>
+                    <p style='font-size: 16px; font-weight: bold; color: gray;'>POWERED BY</p>
                 </div>
             """
             st.markdown(html, unsafe_allow_html=True)
