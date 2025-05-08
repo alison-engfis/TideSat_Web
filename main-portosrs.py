@@ -11,5 +11,7 @@ from tools import main
 
 estacoes_info = ESTACOES_PORTOS
 estacao_padrao = ESTACAO_PADRAO_PORTOS
+logotipo = "portosrs_logo.png"
+html_logo = "https://www.portosrs.com.br/site/"
 
-main(estacoes_info, estacao_padrao)
+main(estacoes_info, estacao_padrao, logotipo, html_logo)

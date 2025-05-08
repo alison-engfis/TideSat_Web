@@ -12,5 +12,9 @@ from main_barroso_config import ESTACOES_BARROSO, ESTACAO_PADRAO_BARROSO
 
 if not checar_senha():
     st.stop()
+estacoes_info = ESTACOES_BARROSO
+estacao_padrao = ESTACAO_PADRAO_BARROSO
+logotipo = "TideSat_logo.webp"
+html_logo = "https://www.tidesatglobal.com/"
 
-main(ESTACOES_BARROSO, ESTACAO_PADRAO_BARROSO)
+main(estacoes_info, estacao_padrao, logotipo, html_logo)

@@ -11,5 +11,7 @@ from tools import main
 
 estacoes_info = ESTACOES_ESTRELA
 estacao_padrao = ESTACAO_PADRAO_ESTRELA
+logotipo = "TideSat_logo.webp"
+html_logo = "https://www.tidesatglobal.com/"
 
-main(estacoes_info, estacao_padrao)
+main(estacoes_info, estacao_padrao, logotipo, html_logo)

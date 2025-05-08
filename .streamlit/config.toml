@@ -1,0 +1,5 @@
+[browser]
+showForkButton = false
+primaryColor="#87CEEB"
+[layout]
+width = "wide"

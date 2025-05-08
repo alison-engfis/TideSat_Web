@@ -20,6 +20,16 @@ ESTACOES_PORTOS = {
         "cota_inundacao": 19.00
     },
 
+    "IDP1": {
+        "descricao": "IDP1 - Ilha da Pintada",
+        "url": "https://app.tidesatglobal.com/idp1/idp1_out.csv",
+        "coord": [-30.385119, -51.059579],
+        "descricao_imagem": " ",
+        "caminho_imagem": " ",
+        "cota_alerta": " ",
+        "cota_inundacao": " "
+    },
+
     "ITA1": {
         "descricao": "ITA1 - Guaíba (Farol de Itapuã)",
         "url": "https://app.tidesatglobal.com/ita1/ita1_out.csv",
@@ -49,12 +59,12 @@ ESTACOES_PORTOS = {
         "cota_alerta": 2.50,
         "cota_inundacao": 3.00
     },
-    "STH1": {
-        "descricao": "STH1 - Fábrica Stihl (São Leopoldo)",
-        "url": "https://app.tidesatglobal.com/sth1/sth1_out.csv",
+    "VDS1": {
+        "descricao": "VDS1 - Veleiros do Sul",
+        "url": "https://app.tidesatglobal.com/vds1/vds1_out.csv",
         "coord": [-29.787741, -51.109447],
-        "descricao_imagem": "Estação STH1 - Fábrica Stihl (São Leopoldo)",
-        "caminho_imagem": "STH1_photo.jpg",
+        "descricao_imagem": " ",
+        "caminho_imagem": " ",
         "cota_alerta": " ",
         "cota_inundacao": " "
     }

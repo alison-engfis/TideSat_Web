@@ -10,12 +10,13 @@ import requests
 import base64
 import streamlit as st
 from io import StringIO
-import plotly.graph_objects as go
+import plotly.express as px
 import pydeck as pdk
 import pandas as pd
 import pytz
-import hmac
+import hmac 
 import numpy as np
+import extra_streamlit_components as stx
 
 from main_config import TIMEZONE_PADRAO 
 
@@ -63,6 +64,8 @@ def restaurar_estado():
 # Função que configura o layout principal
 def configurar_layout():
 
+    obter_tema()
+
     st.set_page_config(layout="wide", page_icon="Logo HighRes iniciais2.png",page_title="TideSat", initial_sidebar_state="collapsed")
 
     # CSS's para personalizar a fonte dos seletores
@@ -83,7 +86,7 @@ def configurar_layout():
         unsafe_allow_html=True,
     )
 
-    # CSS para personalizar e evitar a quebra de linhas nos botões (PROVAVELMENTE SERÁ EXTINTO DO PROJETO MUITO EM BREVE)
+    # CSS para personalizar e evitar a quebra de linhas nos botões
     st.markdown("""
         <style>
         /* Estilo para truncar texto no botão */
@@ -105,34 +108,63 @@ def configurar_layout():
         """
     st.markdown(esconder, unsafe_allow_html=True)
 
-# Função para carregar os dados das estações (via URL individual)
+# Função para carregar os dados dos links
 def carregar_dados(url):
-    resposta = requests.get(url, verify=False, timeout=100)
+        
+        # Fazendo a requisição dos dados
+        resposta = requests.get(url, verify=False, timeout=100)
 
-    if resposta.status_code != 200:
-        st.warning("Erro ao acessar os dados da estação selecionada.")
-        st.stop()
+        # Verifica se a requisição foi bem-sucedida
+        if resposta.status_code != 200:
+            st.markdown("<br>" * 2, unsafe_allow_html=True)
+            st.warning("Erro ao acessar os dados da estação selecionada.")
+            st.stop()
 
-    dados_nivel = StringIO(resposta.text)
-    df = pd.read_csv(dados_nivel, sep=',')
+        # Carregando os dados no DataFrame
+        dados_nivel = StringIO(resposta.text)
+        df = pd.read_csv(dados_nivel, sep=',')
 
-    if df.empty:
-        st.warning("Erro ao carregar os dados da estação selecionada.")
-        st.stop()
+        # Verifica se o DataFrame está vazio
+        if df.empty:
+            st.markdown("<br>" * 2, unsafe_allow_html=True)
+            st.warning("Erro ao carregar os dados da estação selecionada.")
+            st.stop()
 
-    df.rename(columns={
-        '% year': 'year', ' month': 'month', ' day': 'day',
-        ' hour': 'hour', ' minute': 'minute', ' second (GMT/UTC)': 'second',
-        ' water level (meters)': 'water_level(m)'}, inplace=True)
+        # Renomeia as colunas conforme necessário
+        df.rename(columns={
+            '% year': 'year', ' month': 'month', ' day': 'day',
+            ' hour': 'hour', ' minute': 'minute', ' second (GMT/UTC)': 'second',
+            ' water level (meters)': 'water_level(m)'}, inplace=True)
 
-    df['datetime'] = pd.to_datetime(df[['year', 'month', 'day', 'hour', 'minute', 'second']])
-    df['datetime_utc'] = df['datetime'].dt.tz_localize('UTC')
+        # Converte a data para o formato datetime
+        df['datetime'] = pd.to_datetime(df[['year', 'month', 'day', 'hour', 'minute', 'second']])
 
-    # Adicionando a coluna `datetime_ajustado`
-    fuso_selecionado = st.session_state.get("fuso_selecionado", "America/Sao_Paulo")
-    df['datetime_ajustado'] = df['datetime_utc'].dt.tz_convert(fuso_selecionado)
+        # Adiciona a coluna de data UTC
+        df['datetime_utc'] = df['datetime'].dt.tz_localize('UTC')
 
-    return df
+        return df
+
+# Função para filtrar os dados pelo período selecionado
+def filtrar_dados(df, dados_inicio, dados_fim, fuso_selecionado):
+
+    # Convertendo dados_inicio e dados_fim para datetime no fuso selecionado
+    dados_inicio_dt = pd.to_datetime(dados_inicio).tz_localize(fuso_selecionado)
+    dados_fim_dt = pd.to_datetime(dados_fim).tz_localize(fuso_selecionado)
+
+    # Obtendo o intervalo completo dos dados
+    dados_inicio_total = df['datetime_ajustado'].min()
+    dados_fim_total = df['datetime_ajustado'].max()
+
+    # Verifica se o período solicitado é o mesmo que o intervalo completo
+    if dados_inicio_dt == dados_inicio_total and dados_fim_dt == dados_fim_total:
+        
+        # Retorna o DataFrame original sem filtrar
+        return df
+
+    # Aplica o filtro nos dados
+    filtro = (df['datetime_ajustado'] >= dados_inicio_dt) & (df['datetime_ajustado'] < dados_fim_dt + timedelta(days=1))
+
+    return df.loc[filtro]
 
 # Função do seletor de fuso
 def fuso_horario():
@@ -149,7 +181,6 @@ def fuso_horario():
     _, col_fuso, _ = st.columns([0.3, 1, 0.3])
 
     with col_fuso:
-
         # Usando expander para esconder ou mostrar o seletor com fuso atual
         with st.expander(f"🕓 Fuso horário: {fuso_atual}", expanded=False):
             
@@ -164,33 +195,28 @@ def fuso_horario():
 
     return fuso_selecionado
 
-# Função para formatar o nível recente via mediana (ADICIONADA A LÓGICA PARA A VELOCIDADE)
-def velocidade_nivel_recente(df, fuso_selecionado):
+# Função para formatar o nível recente via mediana
+def nivel_recente(df, fuso_selecionado):
 
     # Define o limite de tempo para as últimas 6 horas
     limite_tempo = df["datetime_utc"].max() - timedelta(hours=6)
     ultimas_6h = df[df["datetime_utc"] >= limite_tempo]
 
+    # Caso não hajam dados suficientes
     if ultimas_6h.empty:
+
+        # Interrompe a execução caso os dados não sejam suficientes para a mediana de 6h.
         st.stop()
 
-    # Cria coluna com tempo em horas (relativo ao primeiro ponto)
-    t0 = ultimas_6h["datetime_utc"].min()
-    ultimas_6h = ultimas_6h.copy()
-    ultimas_6h["tempo_h"] = (ultimas_6h["datetime_utc"] - t0).dt.total_seconds() / 3600.0
+    # Calcula o nível mediano e a data/hora da última medida
+    nivel_mediana = ultimas_6h["water_level(m)"].median()
+    dh_ultima = ultimas_6h["datetime_utc"].max().tz_convert(fuso_selecionado)
 
-    # Ajuste de reta (polinômio de grau 1)
-    coef = np.polyfit(ultimas_6h["tempo_h"], ultimas_6h["water_level(m)"], 1)
+    # Formata o nível com vírgula, incluindo a unidade de medida e a data/hora
+    nivel_formatado = f"{nivel_mediana:.2f}&nbsp;m".replace('.', ',')
+    dh_ultima_formatada = dh_ultima.strftime('%d/%m/%Y - %H:%M')
 
-    inclinacao = coef[0]  # m/h
-    nivel_recente = coef[1]  # Nível estimado no início
-
-    # Formatando para se adequar as necessidades do layout
-    nivel_formatado = f"{nivel_recente:.2f}&nbsp;m".replace('.', ',')
-    inclinacao_formatada = f"{inclinacao:.2f}&nbsp;m/h".replace('.', ',')
-    dh_ultima_formatada = df["datetime_utc"].max().tz_convert(fuso_selecionado).strftime('%d/%m/%Y - %H:%M')
-
-    return inclinacao_formatada, nivel_formatado, dh_ultima_formatada
+    return nivel_formatado, dh_ultima_formatada
 
 # Função para exibir as cotas notáveis nos filtros
 def cotas_notaveis(estacao_nome, estacoes_info):
@@ -219,365 +245,124 @@ def converter_base64(caminho_imagem):
         return None
 
 # Função que configura a exibição do gráfico
-def plotar_grafico(url, estacao_selecionada, cota_alerta, cota_inundacao, dados_inicio, dados_fim):
+def plotar_grafico(url, estacoes_info, dados_filtrados, estacao_selecionada, cota_alerta, cota_inundacao, dados_inicio, dados_fim):
+    
     cor_linha, _, _, _, _ = obter_tema()
 
-    # 🔹 Carrega todos os dados da estação
-    df_completo = carregar_dados(url)
-
-    if df_completo is None or df_completo.empty:
-        st.write(f"Nenhum dado encontrado para a estação {estacao_selecionada}.")
+    if dados_filtrados is None or dados_filtrados.empty:
+        st.write(f"Nenhum dado encontrado para o período selecionado na estação {estacao_selecionada}.")
         st.stop()
 
-    # 🔹 Prepara zoom inicial com base nos inputs do usuário
-    fuso = st.session_state["fuso_selecionado"]
-    zoom_inicio = pd.to_datetime(dados_inicio).tz_localize(fuso)
-    zoom_fim = pd.to_datetime(dados_fim).tz_localize(fuso)
+    # Criação do gráfico interativo
+    fig = px.line(
+        dados_filtrados,
+        render_mode='svg',
+        x='datetime_ajustado',
+        y='water_level(m)',
+        labels={'datetime_ajustado': 'Data', 'water_level(m)': 'Nível (m)'}
+    )
 
-    # 🔹 Criação do gráfico com todos os dados visíveis
-    fig = go.Figure()
+    # Configurações dos eixos
+    fig.update_xaxes(fixedrange=False)
+    fig.update_yaxes(fixedrange=True)
 
-    fig.add_trace(go.Scatter(
-        x=df_completo['datetime_ajustado'],
-        y=df_completo['water_level(m)'],
-        line=dict(color=cor_linha),
-        showlegend=False,
-        hovertemplate='Data: %{x|%d/%m/%Y %H:%M}<br>Nível (m): %{y:.2f}<extra></extra>',
-    ))
+    # Condição para aplicar o ajuste no eixo Y apenas se o período for "Últimas 24h"
+    if (dados_fim - dados_inicio) == pd.Timedelta(hours=24):
+        
+        med = np.median(dados_filtrados['water_level(m)'])
+        tempmin = med - 0.5
+        tempmax = med + 0.5
+        fig.update_yaxes(autorangeoptions_clipmin=tempmin, autorangeoptions_clipmax=tempmax, fixedrange=True)
 
-    # Cotas de inundação e alerta
-    if cota_inundacao is not None:
-        fig.add_shape(
-            type="line", xref="paper", yref="y",
-            x0=0, x1=1, y0=cota_inundacao, y1=cota_inundacao,
-            line=dict(color="#FF0000", dash="dash"),
-            name="Cota de inundação", legendgroup="cota_inundacao", showlegend=True
-        )
+    elif (dados_fim - dados_inicio) >= pd.Timedelta(days=7):  # Inclui Período Inteiro e Últimos 7 dias
 
-    if cota_alerta is not None:
-        fig.add_shape(
-            type="line", xref="paper", yref="y",
-            x0=0, x1=1, y0=cota_alerta, y1=cota_alerta,
-            line=dict(color="#FFA500", dash="dash"),
-            name="Cota de alerta", legendgroup="cota_alerta", showlegend=True
-        )
+        from main_estrela_config import ESTACOES_ESTRELA
 
-    # Layout interativo com zoom inicial e navegação total
+        # Verifica se está rodando no app de Estrela
+        if estacoes_info == ESTACOES_ESTRELA:
+
+            # Usa os limites globais de EST1
+            df_est1 = carregar_dados(ESTACOES_ESTRELA["EST1"]["url"])
+
+            if estacao_selecionada != "EST1":
+                
+                max_nivel = 21
+                min_nivel = df_est1['water_level(m)'].min()
+            else:
+                max_nivel = df_est1["water_level(m)"].max()
+                min_nivel = df_est1["water_level(m)"].min()
+
+        else:
+            # Comportamento padrão
+            df = carregar_dados(url)
+            max_nivel = df['water_level(m)'].max()
+            min_nivel = df['water_level(m)'].min()
+
+        # Aplica o range do eixo Y diretamente
+        fig.update_yaxes(range=[min_nivel, max_nivel], fixedrange=True)
+
     fig.update_layout(
-            xaxis=dict(
-            title="Data",
-            titlefont=dict(size=16),
-            range=[zoom_inicio, zoom_fim],
-            rangeslider=dict(visible=False),
-            type="date"
-        ),
-        yaxis=dict(
-            title="Nível medido (m)",
-            titlefont=dict(size=16)
-        ),
-        yaxis2=dict(
-            overlaying="y",
-            side="right",
-            showgrid=False
-        ),
+        xaxis_title={'font': {'size': 20}},
+        yaxis_title={'font': {'size': 20}},
+        font={'size': 18},
+        height=430,
+        margin=dict(l=40, r=0.1, t=40, b=40),
         legend=dict(
-            orientation='h',
+            orientation='v',
             yanchor='bottom',
-            y=1,
-            xanchor='center',
-            x=0.7
+            y=1.01,
+            xanchor='left',
+            x=0.04,
+            font=dict(size=11),
         ),
-        height=500,
-        margin=dict(l=40, r=40, t=40, b=40),
-        autosize=True
+        autosize=True, 
     )
 
-    st.plotly_chart(fig, use_container_width=True)
-
-# Função para obter as configurações do tema
-def obter_tema():
-    
-    ms = st.session_state
-
-    # Obtém o tema do config.toml
-    tema_padrao = "escuro" if st.get_option("theme.base") == "dark" else "claro"
-
-    if "temas" not in ms:
-        ms.temas = {
-            "tema_atual": tema_padrao,
-            "atualizado": True,
-            "claro": {
-                "theme.base": "light",
-                #"theme.backgroundColor": "#121212",
-                "theme.primaryColor": "#0065cc",
-                "theme.secondaryBackgroundColor": "#e1e4e8",
-                "theme.textColor": "#0a1464",
-                "icone_botoes": "Claro",
-                "cor_linha": "#0065cc",
-                "cor_texto": "#0061c3",
-                "cor_mapa": "#0065cc"
-            },
-            "escuro": {
-                "theme.base": "dark",
-                #"theme.backgroundColor": "#ffffff",
-                "theme.primaryColor": "#87CEEB",
-                "theme.secondaryBackgroundColor": "#262B36",
-                "theme.textColor": "white",
-                "icone_botoes": "Escuro",
-                "cor_linha": "#87CEEB",
-                "cor_texto": "#87CEEB",
-                "cor_mapa": "#87CEEB"
-            },
-        }
-
-    # Cor do tema atual para os detalhes
-    cor_linha = ms.temas["claro"]["cor_linha"] if ms.temas["tema_atual"] == "claro" else ms.temas["escuro"]["cor_linha"]
-    cor_texto = ms.temas["claro"]["cor_texto"] if ms.temas["tema_atual"] == "claro" else ms.temas["escuro"]["cor_texto"]
-    cor_mapa = ms.temas["claro"]["cor_mapa"] if ms.temas["tema_atual"] == "claro" else ms.temas["escuro"]["cor_mapa"]
-    cor_localizacao = ""
-
-    if cor_mapa == ms.temas["claro"]["cor_mapa"]: 
-        cor_localizacao = "[0, 101, 204, 255]"
-
-    if cor_mapa == ms.temas["escuro"]["cor_mapa"]:
-        cor_localizacao = "[135, 206, 235, 200]"
-
-    return cor_linha, cor_texto, cor_mapa, cor_localizacao, ms
-
-# Função para mudar o tema
-def MudarTema():
-
-    _, _, _, _, ms = obter_tema()
-
-    tema_anterior = ms.temas["tema_atual"]
-    tdict = ms.temas["claro"] if ms.temas["tema_atual"] == "claro" else ms.temas["escuro"]
-    
-    for chave, valor in tdict.items(): 
-
-        if chave.startswith("theme"): 
-            st._config.set_option(chave, valor)
-
-    ms.temas["atualizado"] = False
-
-    if tema_anterior == "escuro": 
-        ms.temas["tema_atual"] = "claro"
-
-    elif tema_anterior == "claro": 
-        ms.temas["tema_atual"] = "escuro"   
-
-# Função para o seletor de modo de visualização
-def modo_visualizacao():
-    _, _, _, _, ms = obter_tema()
-
-    # Determina o ícone do botão baseado no tema atual
-    icone_botoes = (
-        ms.temas["claro"]["icone_botoes"]
-        if ms.temas["tema_atual"] == "claro"
-        else ms.temas["escuro"]["icone_botoes"]
-    )
-
-    _, col_visual, _ = st.columns([0.5, 1, 0.5])
-
-    with col_visual:
-
-        # Usando um expander para o seletor de modo de visualização
-        with st.expander(f"👓 Tema: {icone_botoes}", expanded=False):
-
-            # Botão para alternar o tema
-            st.button(icone_botoes, on_click=MudarTema)
-
-# Função para construir o layout
-def main(estacoes_info, estacao_padrao): 
-
-    configurar_layout()
-
-    tz_padrao = TIMEZONE_PADRAO
-
-    if "fuso_selecionado" not in st.session_state:
-        st.session_state["fuso_selecionado"] = tz_padrao
-
-    with st.container(border=True):
-
-        # Colunas principais
-        _, col_filtros, _, col_grafico, _ = st.columns([0.1, 1.1, 0.1, 3, 0.1], gap="small", vertical_alignment="top")
-
-        _, cor_texto, _, _, _ = obter_tema()
-
-        with col_filtros:
-
-            with st.container():
-
-                col_img = st.columns([1])[0]
-
-                with col_img:
-
-                    caminho_imagem = "TideSat_logo.webp"
-                    imagem_base64 = converter_base64(caminho_imagem)
-                    html = f"""
-                        <div style='text-align: center;'>
-                            <a href='https://tidesatglobal.com' target='_blank'>
-                                <img src='data:image/webp;base64,{imagem_base64}' width='200'>
-                            </a>
-                        </div>
-                    """
-                    st.markdown(html, unsafe_allow_html=True)
-
-                    st.markdown("<br>", unsafe_allow_html=True)
-
-                col_estacao = st.columns([1])[0]
-
-                with col_estacao:
-
-                    st.markdown("""
-                        <div style='text-align: center;'>
-                            <p style='font-size: 14px; margin: 0;'>Estação de medição</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    
-                    estacao_selecionada = st.selectbox(" ", list(estacoes_info.keys()), 
-                                                    format_func=lambda code :estacoes_info[code]["descricao"],
-                                                    index=list(estacoes_info.keys()).index(estacao_padrao),
-                                                    label_visibility='collapsed')
-                    
-                    st.session_state["estacao_selecionada"] = estacao_selecionada
-
-                    estacao_info = estacoes_info[estacao_selecionada]
-
-                    url_estacao = estacao_info["url"]
-
-                    dados = carregar_dados(url_estacao)
-                    dados['datetime_ajustado'] = dados['datetime_utc'].dt.tz_convert(st.session_state["fuso_selecionado"])
-                    
-                    st.session_state["dados_estacao"] = dados
-                    
-                    dados_inicio = dados['datetime_ajustado'].min().date()
-                    dados_fim = dados['datetime_ajustado'].max().date()
-
-                col_inicio, col_fim = st.columns(2, gap="small")
-
-                with col_inicio:
-
-                    st.markdown("""
-                        <div style='text-align: center;'>
-                            <p style='font-size: 14px; margin: 0;'>Data inicial</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    
-                    st.session_state["dados_inicio"] = st.date_input(" ", value=dados_inicio, format="DD/MM/YYYY", label_visibility='collapsed')
-
-                with col_fim:
-
-                    st.markdown("""
-                        <div style='text-align: center;'>
-                            <p style='font-size: 14px; margin: 0;'>Data final</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    
-                    st.session_state["dados_fim"] = st.date_input(" ", value=dados_fim, format="DD/MM/YYYY", label_visibility='collapsed')
-                
-                with st.expander(f"📅 Seleção rápida de período", expanded=True):
-                    col_inteiro, col_sete = st.columns(2, gap="small")
-
-                    with col_inteiro:
-                        if st.button('Período inteiro', use_container_width=True):
-                            st.session_state["dados_inicio"] = dados_inicio
-                            st.session_state["dados_fim"] = dados_fim
-
-                    with col_sete:
-                        if st.button('Últimos 7 dias', use_container_width=True):
-                            st.session_state["dados_inicio"] = (dados['datetime_ajustado'].max() - timedelta(days=7)).date()
-                            st.session_state["dados_fim"] = dados['datetime_ajustado'].max().date()
-
-                    _, col_24h, _ = st.columns([0.7, 1, 0.7], gap="small")
-
-                    with col_24h:
-                        if st.button('Últimas 24h', use_container_width=True):
-                            st.session_state["dados_inicio"] = (dados['datetime_ajustado'].max() - timedelta(hours=24)).date()
-                            st.session_state["dados_fim"] = dados['datetime_ajustado'].max().date()
-
-                col_recente = st.columns([1])[0]
-
-                with col_recente:
-
-                    df_nivel = carregar_dados(url_estacao) 
-                    velocidade, nivel, dh_ultima_formatada = velocidade_nivel_recente(df_nivel, st.session_state["fuso_selecionado"])
-
-                    if velocidade is not None and nivel is not None:
-
-                        # velocidade_numerica = float(velocidade.replace("&nbsp;m/h", "").replace(",", "."))
-
-                        # cor_velocidade = "green" if velocidade_numerica > 0 else "orange"
-
-                        st.markdown(f"""
-                        <div style='text-align: center;'>
-                            <p style='font-size: 17px; margin: 0;'>Nível recente: 
-                            <span style='color:{cor_texto};'>{nivel}</span></p>
-                        
-                        </div>
-                        """, unsafe_allow_html=True)
-                                        
-                    # st.markdown("<br>", unsafe_allow_html=True)
-
-                    st.markdown(f"""<div style='text-align: center;'>
-                            <p style='font-size: 13px; margin: 0;'>Atualização: {dh_ultima_formatada}</p>
-                            </div>""", unsafe_allow_html=True)
-
-        with col_grafico:
-
-            with st.container():
-                
-                cota_alerta, cota_inundacao = cotas_notaveis(estacao_selecionada, estacoes_info)
-
-                plotar_grafico(url_estacao, estacao_selecionada, cota_alerta, cota_inundacao, st.session_state["dados_inicio"], st.session_state["dados_fim"])
-
-    _, col_modo, col_fuso, _ = st.columns([0.5, 1, 1.3, 0.5], gap="small", vertical_alignment="top")
-
-    
-    with st.container():
-
-        with col_modo:
-
-            modo_visualizacao()
-
-        with col_fuso:
-
-            fuso_horario()
-
-# No início da execução, restauramos a estação selecionada
-def restaurar_estacao_e_periodo():
-    if "estacao_selecionada" in st.session_state:
-        estacao_selecionada = st.session_state["estacao_selecionada"]
-
-    if "ultimo_periodo" in st.session_state:
-        ultimo_periodo = st.session_state["ultimo_periodo"]
-
-    # Garante que o período anterior seja restaurado corretamente
-    if "ultimo_periodo_temp" in st.session_state:
-        st.session_state["ultimo_periodo"] = st.session_state.pop("ultimo_periodo_temp")         
-        
-# [TEMPORARIAMENTE DESATIVADA (QUIÇÁ PARA SEMPRE)] Função para filtrar os dados pelo período selecionado
-def filtrar_dados(df, dados_inicio, dados_fim, fuso_selecionado):
-
-    # Convertendo dados_inicio e dados_fim para datetime no fuso selecionado
-    dados_inicio_dt = pd.to_datetime(dados_inicio).tz_localize(fuso_selecionado)
-    dados_fim_dt = pd.to_datetime(dados_fim).tz_localize(fuso_selecionado)
-
-    # Obtendo o intervalo completo dos dados
-    dados_inicio_total = df['datetime_ajustado'].min()
-    dados_fim_total = df['datetime_ajustado'].max()
-
-    # Verifica se o período solicitado é o mesmo que o intervalo completo
-    if dados_inicio_dt == dados_inicio_total and dados_fim_dt == dados_fim_total:
-        
-        # Retorna o DataFrame original sem filtrar
-        return df
-
-    # Aplica o filtro nos dados
-    filtro = (df['datetime_ajustado'] >= dados_inicio_dt) & (df['datetime_ajustado'] < dados_fim_dt + timedelta(days=1))
-
-    return df.loc[filtro]
-
-# (TEMPORÁRIAMENTE DESATIVADA) Função para configurar a imagem e o mapa da estação selecionada
+    # Ajuste da cor da linha principal
+    fig.update_traces(line=dict(color=cor_linha))
+
+    # Adiciona a cota de inundação, se disponível
+    if cota_inundacao not in (None, "", " "):
+        fig.add_shape(
+            type="line",
+            xref="paper",  
+            yref="y",
+            x0=0,
+            x1=1,
+            y0=cota_inundacao,
+            y1=cota_inundacao,
+            line=dict(color="#FF0000", dash="dash"),
+            name="Cota de inundação",
+            legendgroup="cota_inundacao", 
+            showlegend=True  
+        )
+
+    # Adiciona a cota de alerta, se disponível
+    if cota_alerta not in (None, "", " "):
+        fig.add_shape(
+            type="line",
+            xref="paper",  
+            yref="y",
+            x0=0,
+            x1=1,
+            y0=cota_alerta,
+            y1=cota_alerta,
+            line=dict(color="#FFA500", dash="dash"),
+            name="Cota de alerta",
+            legendgroup="cota_alerta",  
+            showlegend=True  
+        )
+
+    config = {
+        "scrollZoom": True,
+        "responsive": True,
+        "displaylogo": False
+    }
+
+    # Exibe o gráfico
+    st.plotly_chart(fig, use_container_width=True, config=config)
+
+# Função para configurar a imagem e o mapa da estação selecionada
 def imagem_mapa_estacao(estacao_nome, estacoes_info):
 
     _, col_img_estac, _, col_mapa, _ = st.columns([0.1, 2, 0.5, 4, 0.9])
@@ -671,3 +456,265 @@ def imagem_mapa_estacao(estacao_nome, estacoes_info):
                 
                 st.pydeck_chart(deck, use_container_width=True)
                 st.markdown("<br>", unsafe_allow_html=True)
+
+# Função para obter as configurações do tema
+def obter_tema():
+    ms = st.session_state
+
+    if "temas" not in ms:
+        ms.temas = {
+            "tema_atual": "claro",
+            "atualizado": True,
+            "claro": {
+                "theme.base": "light",
+                "theme.backgroundColor": "#121212",
+                "theme.primaryColor": "#87CEEB",
+                "theme.secondaryBackgroundColor": "#262B36",
+                "theme.textColor": "white",
+                "icone_botoes": "Claro",
+                "cor_linha": "#0065cc",
+                "cor_texto": "#0061c3",
+                "cor_mapa": "#0065cc"
+            },
+            "escuro": {
+                "theme.base": "dark",
+                "theme.backgroundColor": "#ffffff",
+                "theme.primaryColor": "#0065cc",
+                "theme.secondaryBackgroundColor": "#e1e4e8",
+                "theme.textColor": "#0a1464",
+                "icone_botoes": "Escuro",
+                "cor_linha": "#87CEEB",
+                "cor_texto": "#87CEEB",
+                "cor_mapa": "#87CEEB"
+            },
+        }
+
+    # Cor do tema atual para os detalhes
+    cor_linha = ms.temas["claro"]["cor_linha"] if ms.temas["tema_atual"] == "claro" else ms.temas["escuro"]["cor_linha"]
+    cor_texto = ms.temas["claro"]["cor_texto"] if ms.temas["tema_atual"] == "claro" else ms.temas["escuro"]["cor_texto"]
+    cor_mapa = ms.temas["claro"]["cor_mapa"] if ms.temas["tema_atual"] == "claro" else ms.temas["escuro"]["cor_mapa"]
+    cor_localizacao = ""
+
+    if cor_mapa == ms.temas["claro"]["cor_mapa"]: 
+        cor_localizacao = "[0, 101, 204, 255]"
+
+    if cor_mapa == ms.temas["escuro"]["cor_mapa"]:
+        cor_localizacao = "[135, 206, 235, 200]"
+
+    return cor_linha, cor_texto, cor_mapa, cor_localizacao, ms
+
+# Função para mudar o tema
+def MudarTema():
+
+    _, _, _, _, ms = obter_tema()
+
+    tema_anterior = ms.temas["tema_atual"]
+    tdict = ms.temas["claro"] if ms.temas["tema_atual"] == "claro" else ms.temas["escuro"]
+    
+    for chave, valor in tdict.items(): 
+
+        if chave.startswith("theme"): 
+            st._config.set_option(chave, valor)
+
+    ms.temas["atualizado"] = False
+
+    if tema_anterior == "escuro": 
+        ms.temas["tema_atual"] = "claro"
+
+    elif tema_anterior == "claro": 
+        ms.temas["tema_atual"] = "escuro"   
+
+# Função para o seletor de modo de visualização
+def modo_visualizacao():
+    _, _, _, _, ms = obter_tema()
+
+    # Determina o ícone do botão baseado no tema atual
+    icone_botoes = (
+        ms.temas["claro"]["icone_botoes"]
+        if ms.temas["tema_atual"] == "claro"
+        else ms.temas["escuro"]["icone_botoes"]
+    )
+
+    _, col_visual, _ = st.columns([0.5, 1, 0.5])
+
+    with col_visual:
+        # Usando um expander para o seletor de modo de visualização
+        with st.expander(f"👓 Tema: {icone_botoes}", expanded=False):
+            # Botão para alternar o tema
+            st.button(icone_botoes, on_click=MudarTema)
+
+# Função para construir o layout
+def main(estacoes_info, estacao_padrao, logotipo, html_logo): 
+
+    configurar_layout()
+
+    tz_padrao = TIMEZONE_PADRAO
+
+    if "fuso_selecionado" not in st.session_state:
+        st.session_state["fuso_selecionado"] = tz_padrao
+
+    with st.container(border=True):
+
+        _, col_filtros, _, col_grafico, _ = st.columns([0.1, 1.1, 0.1, 3, 0.1], gap="small", vertical_alignment="top")
+
+        _, cor_texto, _, _, _ = obter_tema()
+
+        with col_filtros:
+
+            with st.container():
+
+                col_img = st.columns([1])[0]
+
+                with col_img:
+
+                    caminho_imagem = logotipo
+                    imagem_base64 = converter_base64(caminho_imagem)
+                    html = f"""
+                        <div style='text-align: center;'>
+                            <a href={html_logo} target='_blank'>
+                                <img src='data:image/webp;base64,{imagem_base64}' width='250'>
+                            </a>
+                        </div>
+                    """
+                    st.markdown(html, unsafe_allow_html=True)
+
+                    st.markdown("<br>", unsafe_allow_html=True)
+
+                col_estacao = st.columns([1])[0]
+
+                with col_estacao:
+
+                    st.markdown("""
+                        <div style='text-align: center;'>
+                            <p style='font-size: 14px; margin: 0;'>Estação de medição</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    estacao_selecionada = st.selectbox(" ", list(estacoes_info.keys()), 
+                                                    format_func=lambda code :estacoes_info[code]["descricao"],
+                                                    index=list(estacoes_info.keys()).index(estacao_padrao),
+                                                    label_visibility='collapsed')
+                    
+                    st.session_state["estacao_selecionada"] = estacao_selecionada
+
+                    estacao_info = estacoes_info[estacao_selecionada]
+
+                    url_estacao = estacao_info["url"]
+
+                    dados = carregar_dados(url_estacao)
+                    dados['datetime_ajustado'] = dados['datetime_utc'].dt.tz_convert(st.session_state["fuso_selecionado"])
+                    
+                    st.session_state["dados_estacao"] = dados
+                    
+                    dados_inicio = dados['datetime_ajustado'].min().date()
+                    dados_fim = dados['datetime_ajustado'].max().date()
+
+                    if pd.isna(dados_inicio) or pd.isna(dados_fim):
+                        st.warning("A estação selecionada ainda não possui dados suficientes para exibição.")
+                        st.stop()
+
+
+                col_inicio, col_fim = st.columns(2, gap="small")
+
+                with col_inicio:
+
+                    st.markdown("""
+                        <div style='text-align: center;'>
+                            <p style='font-size: 14px; margin: 0;'>Data inicial</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    st.session_state["dados_inicio"] = st.date_input(" ", value=dados_inicio, format="DD/MM/YYYY", label_visibility='collapsed')
+
+                with col_fim:
+
+                    st.markdown("""
+                        <div style='text-align: center;'>
+                            <p style='font-size: 14px; margin: 0;'>Data final</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    st.session_state["dados_fim"] = st.date_input(" ", value=dados_fim, format="DD/MM/YYYY", label_visibility='collapsed')
+
+                with st.expander(f"📅 Seleção rápida de período", expanded=True):
+                    col_inteiro, col_sete = st.columns(2, gap="small")
+
+                    with col_inteiro:
+                        if st.button('Período inteiro', use_container_width=True):
+                            st.session_state["dados_inicio"] = dados_inicio
+                            st.session_state["dados_fim"] = dados_fim
+                            st.session_state["ultimo_periodo"] = "inteiro"
+
+                    with col_sete:
+                        if st.button('Últimos 7 dias', use_container_width=True):
+                            st.session_state["dados_inicio"] = (dados['datetime_ajustado'].max() - timedelta(days=7)).date()
+                            st.session_state["dados_fim"] = dados['datetime_ajustado'].max().date()
+                            st.session_state["ultimo_periodo"] = "7d"
+
+                    _, col_24h, _ = st.columns([0.7, 1, 0.7], gap="small")
+
+                    with col_24h:
+                        if st.button('Últimas 24h', use_container_width=True):
+                            st.session_state["dados_inicio"] = (dados['datetime_ajustado'].max() - timedelta(hours=24)).date()
+                            st.session_state["dados_fim"] = dados['datetime_ajustado'].max().date()
+                            st.session_state["ultimo_periodo"] = "24h"
+                          
+                          # Passando 'ultimo_periodo' para MudarTema para garantir que ele seja mantido
+                    if 'ultimo_periodo' in st.session_state:
+                        ultimo_periodo_temp = st.session_state['ultimo_periodo']
+
+                col_recente = st.columns([1])[0]
+
+                with col_recente:
+
+                    df_nivel = carregar_dados(url_estacao)
+                    
+                    nivel_formatado, dh_ultima_formatada = nivel_recente(df_nivel, st.session_state["fuso_selecionado"])
+                    
+                    st.markdown("<br>", unsafe_allow_html=True)
+
+                    st.markdown(f"""
+                        <div style='text-align: center;'>
+                            <p style='font-size: 17px; margin: 0;'>Nível recente: <span style='color:{cor_texto};'>{nivel_formatado}</span></p>
+                        <div style='text-align: center;'>
+                            <p style='font-size: 13px; margin: 0;'>Atualização: {dh_ultima_formatada}</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    st.markdown("<br>", unsafe_allow_html=True)
+
+        with col_grafico:
+            with st.container():
+
+                dados_filtrados = filtrar_dados(st.session_state["dados_estacao"], st.session_state["dados_inicio"],
+                    st.session_state["dados_fim"], st.session_state["fuso_selecionado"])
+                cota_alerta, cota_inundacao = cotas_notaveis(estacao_selecionada, estacoes_info)
+
+                plotar_grafico(url_estacao, estacoes_info, dados_filtrados, estacao_selecionada, cota_alerta, cota_inundacao, st.session_state["dados_inicio"], st.session_state["dados_fim"])
+
+    _, col_modo, col_fuso, _ = st.columns([0.5, 1, 1.3, 0.5], gap="small", vertical_alignment="top")
+
+    
+    with st.container():
+
+        with col_modo:
+
+            modo_visualizacao()
+
+        with col_fuso:
+
+            fuso_horario()
+
+# No início da execução, restauramos a estação selecionada
+def restaurar_estacao_e_periodo():
+    if "estacao_selecionada" in st.session_state:
+        estacao_selecionada = st.session_state["estacao_selecionada"]
+
+    if "ultimo_periodo" in st.session_state:
+        ultimo_periodo = st.session_state["ultimo_periodo"]
+
+    # 🔹 Garante que o período anterior seja restaurado corretamente
+    if "ultimo_periodo_temp" in st.session_state:
+        st.session_state["ultimo_periodo"] = st.session_state.pop("ultimo_periodo_temp")         
+        
+restaurar_estacao_e_periodo()
