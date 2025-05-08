@@ -112,15 +112,20 @@ def configurar_layout():
 def mostrar_cabecalho_tidesat(logotipo):
     
     if logotipo not in ["TideSat_logo.webp", "Logo HighRes iniciais2.png"]:
-        _, col_logo, _ = st.columns([1, 2, 1])
+        _, col_cabecalho, _ = st.columns([1, 4, 1])
 
-        with col_logo:
+        with col_cabecalho:
+            # Converte logo TideSat para base64
             caminho_imagem = "TideSat_logo.webp"
             imagem_base64 = converter_base64(caminho_imagem)
+
+            # HTML para alinhar "Powered by" e o logo lado a lado
             html = f"""
-                <div style='text-align: left;'>
-                    <img src='data:image/webp;base64,{imagem_base64}' width='100'>
-                    <p style='font-size: 16px; font-weight: bold; color: gray;'>POWERED BY</p>
+                <div style='display: flex; justify-content: center; align-items: center; gap: 15px;'>
+                    <span style='font-size: 16px; font-style: italic; color: gray;'>POWERED BY</span>
+                    <a href="https://www.tidesatglobal.com/" target="_blank">
+                        <img src='data:image/webp;base64,{imagem_base64}' width='80'>
+                    </a>
                 </div>
             """
             st.markdown(html, unsafe_allow_html=True)
