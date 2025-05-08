@@ -108,6 +108,23 @@ def configurar_layout():
         """
     st.markdown(esconder, unsafe_allow_html=True)
 
+# Função que coordena o seguinte: Se NÃO for o logo da TideSat, mostramos o "Powered by TideSat"
+def mostrar_cabecalho_tidesat(logotipo):
+    
+    if logotipo not in ["TideSat_logo.webp", "Logo HighRes iniciais2.png"]:
+        _, col_logo, _ = st.columns([1, 2, 1])
+
+        with col_logo:
+            caminho_imagem = "TideSat_logo.webp"
+            imagem_base64 = converter_base64(caminho_imagem)
+            html = f"""
+                <div style='text-align: center;'>
+                    <img src='data:image/webp;base64,{imagem_base64}' width='180'>
+                    <p style='font-size: 16px; font-weight: bold; color: gray;'>POWERED BY TIDESAT</p>
+                </div>
+            """
+            st.markdown(html, unsafe_allow_html=True)
+
 # Função para carregar os dados dos links
 def carregar_dados(url):
         
@@ -547,6 +564,9 @@ def modo_visualizacao():
 def main(estacoes_info, estacao_padrao, logotipo, html_logo): 
 
     configurar_layout()
+
+    # Mostra cabeçalho "Powered by TideSat" só se for uma dashboard personalizada
+    mostrar_cabecalho_tidesat(logotipo)
 
     tz_padrao = TIMEZONE_PADRAO
 
