@@ -331,11 +331,11 @@ def plotar_grafico(url, estacoes_info, dados_filtrados, estacao_selecionada, cot
         height=430,
         margin=dict(l=40, r=0.1, t=40, b=40),
         legend=dict(
-            orientation='h',
+            orientation='v',
             yanchor='bottom',
             y=1,
             xanchor='left',
-            x=0.04,
+            x=0.01,
             font=dict(size=11),
         ),
         autosize=True, 
