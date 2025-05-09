@@ -333,7 +333,7 @@ def plotar_grafico(url, estacoes_info, dados_filtrados, estacao_selecionada, cot
         legend=dict(
             orientation='h',
             yanchor='bottom',
-            y=1.09,
+            y=1.15,
             xanchor='left',
             x=0.01,
             font=dict(size=11),
