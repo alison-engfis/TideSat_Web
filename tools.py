@@ -332,9 +332,8 @@ def plotar_grafico(url, estacoes_info, dados_filtrados, estacao_selecionada, cot
         margin=dict(l=40, r=0.1, t=40, b=40),
         legend=dict(
             orientation='h',
-            yanchor='top',
-            y=1.1,
-            xanchor='left',
+            yanchor='bottom',
+            xanchor='center',
             x=0.01,
             font=dict(size=11),
         ),
