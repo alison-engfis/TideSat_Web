@@ -16,7 +16,6 @@ import pandas as pd
 import pytz
 import hmac 
 import numpy as np
-import extra_streamlit_components as stx
 
 from main_config import TIMEZONE_PADRAO 
 
@@ -332,7 +331,7 @@ def plotar_grafico(url, estacoes_info, dados_filtrados, estacao_selecionada, cot
         height=430,
         margin=dict(l=40, r=0.1, t=40, b=40),
         legend=dict(
-            orientation='v',
+            orientation='h',
             yanchor='bottom',
             y=1.01,
             xanchor='left',
