@@ -9,6 +9,11 @@ levando as informações constantes pertinentes a esse script.
 import streamlit as st
 from tools import main, checar_senha
 from main_barroso_config import ESTACOES_BARROSO, ESTACAO_PADRAO_BARROSO
+from language import LANG
+
+# Define o idioma para essa instância
+idioma = "pt"
+lang = LANG[idioma]
 
 if not checar_senha():
     st.stop()
@@ -17,4 +22,4 @@ estacao_padrao = ESTACAO_PADRAO_BARROSO
 logotipo = "TideSat_logo.webp"
 html_logo = "https://www.tidesatglobal.com/"
 
-main(estacoes_info, estacao_padrao, logotipo, html_logo)
+main(estacoes_info, estacao_padrao, logotipo, html_logo, lang)
