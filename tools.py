@@ -277,13 +277,13 @@ def plotar_grafico(url, estacoes_info, dados_filtrados, estacao_selecionada, cot
         render_mode='svg',
         x='datetime_ajustado',
         y='water_level(m)',
-        labels={'datetime_ajustado': "Data" if lang["lang_code"] == "pt" else "Date", 'water_level(m)': "Nível (m)" if lang["lang_code"] == "pt" else "Level (m)"}
+        labels={'datetime_ajustado': "Data" if lang["lang_code"] == "pt" else "Date", 'water_level(m)': "Nível (m)" if lang["lang_code"] == "pt" else "Water level (m)"}
     )
     # Configurações dos eixos
     fig.update_xaxes(fixedrange=False)
     fig.update_yaxes(fixedrange=True)
 
-    # Condição para aplicar o ajuste no eixo Y apenas se o período for "{lang['last_24_hours']}"
+    # Condição para aplicar o ajuste no eixo Y apenas se o período for "Últimas 24h"
     if (dados_fim - dados_inicio) == pd.Timedelta(hours=24):
         
         med = np.median(dados_filtrados['water_level(m)'])
@@ -291,7 +291,7 @@ def plotar_grafico(url, estacoes_info, dados_filtrados, estacao_selecionada, cot
         tempmax = med + 0.5
         fig.update_yaxes(autorangeoptions_clipmin=tempmin, autorangeoptions_clipmax=tempmax, fixedrange=True)
 
-    elif (dados_fim - dados_inicio) >= pd.Timedelta(days=7):  # Inclui Período Inteiro e {lang['last_7_days']}
+    elif (dados_fim - dados_inicio) >= pd.Timedelta(days=7):  # Inclui Período Inteiro
 
         from main_estrela_config import ESTACOES_ESTRELA
 

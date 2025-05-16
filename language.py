@@ -23,11 +23,11 @@ LANG = {
     },
     "en": {
         "lang_code": "en",
-        "station": "Measurement station",
+        "station": "Water level station",
         "initial_date": "Start date",
         "final_date": "End date",
         "recent_level": "Recent level",
-        "update": "Update",
+        "update": "Last update",
         "full_period": "Full period",
         "last_7_days": "Last 7 days",
         "last_24_hours": "Last 24 hours",
