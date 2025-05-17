@@ -31,7 +31,7 @@ LANG = {
         "full_period": "Full period",
         "last_7_days": "Last 7 days",
         "last_24_hours": "Last 24 hours",
-        "quick_select": "📅 Quick period selection",
+        "quick_select": "📅 Quick time interval selection",
         "timezone": "🕓 Time zone",
         "theme": "👓 Theme",
         "incorrect_password": "😕 Incorrect password. Try again",

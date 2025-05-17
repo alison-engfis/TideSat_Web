@@ -15,7 +15,7 @@ ESTACOES_PORTOS = {
         "url": "https://app.tidesatglobal.com/est1/est1_out.csv",
         "coord": [-29.471768, -51.956703],
         "descricao_imagem": "Estação EST1 - Porto de Estrela",
-        "caminho_imagem": " ",
+        "caminho_imagem": "photos/est1_photo.jpg",
         "cota_alerta": 17.00,
         "cota_inundacao": 19.00
     },
@@ -55,7 +55,7 @@ ESTACOES_PORTOS = {
         "url": "https://app.tidesatglobal.com/sph4/sph4_out.csv",
         "coord": [-30.02703, -51.23166],
         "descricao_imagem": "Estação SPH4 - Guaíba (Av. Mauá)",
-        "caminho_imagem": "sph4_photo.jpg",
+        "caminho_imagem": "photos/sph4_photo.jpg",
         "cota_alerta": 2.50,
         "cota_inundacao": 3.00
     },

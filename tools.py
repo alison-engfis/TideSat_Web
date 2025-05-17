@@ -235,6 +235,13 @@ def nivel_recente(df, fuso_selecionado, lang):
 
     return nivel_formatado, dh_ultima_formatada
 
+# Verifica o status de funcionamento da estação com base na última medição
+def verificar_status_estacao(ultimo_registro_utc):
+
+    limite_inatividade = pd.Timestamp.utcnow() - pd.Timedelta(hours=12)
+
+    return "Ativa" if ultimo_registro_utc > limite_inatividade else "Inativa"
+
 # Função para exibir as cotas notáveis nos filtros
 def cotas_notaveis(estacao_nome, estacoes_info):
 
@@ -245,6 +252,22 @@ def cotas_notaveis(estacao_nome, estacoes_info):
 
     return cota_alerta, cota_inundacao
 
+# Função para determinar a situação atual do nível da estação com base nas cotas
+def situacao_nivel(nivel, cota_alerta, cota_inundacao):
+
+    if cota_alerta in ("", " ", None) or cota_inundacao in ("", " ", None):
+
+        return "Indisponível", "gray"
+    
+    elif nivel < cota_alerta:
+        return "Normal", "green"
+    
+    elif cota_alerta <= nivel < cota_inundacao:
+        return "Alerta", "orange"
+    
+    else:
+        return "Inundação", "red"
+    
 # Função para converter a imagem para base64
 def converter_base64(caminho_imagem):
 
@@ -260,6 +283,69 @@ def converter_base64(caminho_imagem):
         print(f"Erro ao converter imagem: {e}")
 
         return None
+
+# Função para configurar a imagem da estação selecionada
+def exibir_imagem_estacao(estacao):
+
+    imagem = estacao.get("caminho_imagem")
+    descricao_imagem = estacao.get("descricao_imagem")
+
+    # Converte a imagem para base64
+    img_estac_base64 = converter_base64(imagem)
+
+    if img_estac_base64:
+        expansivel_code = f"""
+        <style>
+            .img-expansivel {{
+                transition: transform 0.2s ease-in-out;
+                cursor: zoom-in;
+                object-fit: contain;
+                max-width: 100%;
+                height: auto;
+            }}
+            .img-expansivel:active {{
+                transform: scale(1.6);
+                cursor: zoom-out;
+            }}
+        </style>
+        <div style="display: flex; justify-content: center; align-items: center;">
+            <img src='data:image/jpeg;base64,{img_estac_base64}' alt="{descricao_imagem}" 
+                 title="{descricao_imagem}" class="img-expansivel">
+        </div>
+        """
+        st.markdown(expansivel_code, unsafe_allow_html=True)
+    else:
+        st.warning("Imagem não disponível.")
+
+# Função para configurar o mapa da estação selecionada
+def exibir_mapa_estacao(estacao):
+    _, _, cor_mapa, cor_localizacao, _ = obter_tema()
+
+    if estacao and "coord" in estacao:
+        latitude = estacao["coord"][0]
+        longitude = estacao["coord"][1]
+
+        layer = pdk.Layer(
+            "ScatterplotLayer",
+            data=pd.DataFrame([{"latitude": latitude, "longitude": longitude}]),
+            get_position="[longitude, latitude]",
+            get_radius=90,
+            get_fill_color=cor_localizacao,
+            pickable=True
+        )
+
+        view_state = pdk.ViewState(
+            latitude=latitude,
+            longitude=longitude,
+            zoom=13.8,
+            pitch=0
+        )
+
+        tooltip = {"html": f"<b>{estacao.get('descricao')}</b>", "style": {"color": cor_mapa}}
+
+        deck = pdk.Deck(layers=[layer], initial_view_state=view_state, tooltip=tooltip)
+
+        st.pydeck_chart(deck, use_container_width=True)
 
 # Função que configura a exibição do gráfico
 def plotar_grafico(url, estacoes_info, dados_filtrados, estacao_selecionada, cota_alerta, cota_inundacao, dados_inicio, dados_fim, lang):
@@ -324,12 +410,12 @@ def plotar_grafico(url, estacoes_info, dados_filtrados, estacao_selecionada, cot
         height=430,
         margin=dict(l=40, r=0.1, t=40, b=40),
         legend=dict(
-            orientation='h',
+            orientation='v',
             yanchor='bottom',
             y=1.01,
             xanchor='left',
             x=0.04,
-            dict(size=11),
+            font=dict(size=11),
         ),
         autosize=True, 
     )
@@ -598,40 +684,158 @@ def main(estacoes_info, estacao_padrao, logotipo, html_logo, lang):
                             st.session_state["dados_inicio"] = (dados['datetime_ajustado'].max() - timedelta(hours=24)).date()
                             st.session_state["dados_fim"] = dados['datetime_ajustado'].max().date()
                             st.session_state["ultimo_periodo"] = "24h"
-                          
-                          # Passando 'ultimo_periodo' para MudarTema para garantir que ele seja mantido
-                    if 'ultimo_periodo' in st.session_state:
-                        ultimo_periodo_temp = st.session_state['ultimo_periodo']
 
-                col_recente = st.columns([1])[0]
+                st.markdown("<br>", unsafe_allow_html=True)            
 
-                with col_recente:
+                col_situacao = st.columns([1])[0]
 
-                    df_nivel = carregar_dados(url_estacao)
+                with col_situacao:
+
+                    # Obtém o último dado da estação selecionada
+                    ultimo_dado = dados["datetime_utc"].max()
+                    status_estacao = verificar_status_estacao(ultimo_dado)
+
+                    # Define cor visual do status
+                    cor_status = "green" if status_estacao == "Ativa" else "red"
+
+                    # Tradução para multilíngue
+                    texto_status = "Status da estação:" if lang["lang_code"] == "pt" else "Station status:"
+                    valor_status = status_estacao if lang["lang_code"] == "pt" else ("Active" if status_estacao == "Ativa" else "Inactive")
+
+                    # Exibe o status de forma centralizada
+                    st.markdown(f"""
+                        <div style='text-align: center;'>
+                            <p style='font-size: 20px; margin: 0;'>{texto_status}</p>
+                            <p style='font-size: 22px; font-weight: bold; color: {cor_status};'>{valor_status}</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+        with col_grafico:
+
+            with st.container(border=True):
+
+                aba_grafico, aba_info, aba_mapa, aba_estatisticas = st.tabs(["📈 Gráfico", "ℹ️ Info", "🗺️ Mapa", "📊 Estatísticas"])
+
+                # ============================ GRÁFICO ============================
+                with aba_grafico:
+
+                    dados_filtrados = filtrar_dados(st.session_state["dados_estacao"], st.session_state["dados_inicio"],
+                        st.session_state["dados_fim"], st.session_state["fuso_selecionado"])
+                    cota_alerta, cota_inundacao = cotas_notaveis(estacao_selecionada, estacoes_info)
+
+                    plotar_grafico(url_estacao, estacoes_info, dados_filtrados, estacao_selecionada, cota_alerta, cota_inundacao, 
+                                st.session_state["dados_inicio"], st.session_state["dados_fim"], lang)
                     
-                    nivel_formatado, dh_ultima_formatada = nivel_recente(df_nivel, st.session_state["fuso_selecionado"], lang)
+                # ============================ INFO ============================
+                with aba_info:
+                    estacao = estacoes_info.get(estacao_selecionada, {})
                     
-                    st.markdown("<br>", unsafe_allow_html=True)
+                    descricao = estacao.get("descricao", "")
+                    localizacao = estacao.get("localizacao", "Indisponível")
+                    endereco = estacao.get("endereco", "Indisponível")
+                    coord = estacao.get("coord", ["", ""])
+                    altimetrica = estacao.get("altimetrica", "Indisponível")
+                    altura_antena = estacao.get("altura_antena", "Indisponível")
+                    inicio_operacao = estacao.get("inicio_operacao", "Indisponível")
+                    status_estacao = verificar_status_estacao(dados["datetime_utc"].max())
+                    cor_status = "green" if status_estacao == "Ativa" else "red"
+
+                    col_img, col_dados = st.columns([1.2, 2], gap="large")
+
+                    with col_img:
+
+                        # Moldura para a foto da estação
+                        with st.container(border=True):
+
+                            exibir_imagem_estacao(estacoes_info.get(estacao_selecionada))
+
+                            
+
+                    with col_dados:
+
+                        st.markdown(f"""
+                            <h4 style='margin-bottom: 0.5rem;'>Estação {estacao_selecionada}</h4>
+                            <p><strong>Localização:</strong> {localizacao}</p>
+                            <p><strong>Endereço:</strong> {endereco}</p>
+                            <p><strong>Coordenadas:</strong> {coord[0]}, {coord[1]}</p>
+                            <p><strong>Referência altimétrica:</strong> {altimetrica}</p>
+                            <p><strong>Altura da antena em relação à água:</strong> {altura_antena} m</p>
+                            <p><strong>Início de operação:</strong> {inicio_operacao}</p>
+                            <p><strong>Situação:</strong> <span style='color:{cor_status}; font-weight:bold'>{status_estacao}</span></p>
+                        """, unsafe_allow_html=True)
+
+
+                # ============================ MAPA ============================
+                with aba_mapa:
+
+                    exibir_mapa_estacao(estacoes_info.get(estacao_selecionada))
+
+                # ============================ ESTATÍSTICAS ============================
+                with aba_estatisticas:
+                        
+                    df_estat = st.session_state["dados_estacao"][["datetime_ajustado", "water_level(m)"]].copy()
+                    df_estat = df_estat.sort_values("datetime_ajustado", ascending=False)
+                    df_estat.rename(columns={
+                        "datetime_ajustado": "Hora" if lang["lang_code"] == "pt" else "Time",
+                        "water_level(m)": "Nível (m)" if lang["lang_code"] == "pt" else "Level (m)"
+                    }, inplace=True)
+
+                    st.markdown("#### Nível das últimas 12h" if lang["lang_code"] == "pt" else "#### Last 12h Water Levels")
+                    st.dataframe(df_estat.head(12), use_container_width=True)
+
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            # Seção com Situação do nível | Nível recente + atualização | Velocidade (em breve)
+            col_situacao, col_nivel, col_velocidade = st.columns([1.2, 1.8, 1.2])
+
+            # 🔹 Situação do nível
+            cota_alerta, cota_inundacao = cotas_notaveis(estacao_selecionada, estacoes_info)
+            df_nivel = carregar_dados(url_estacao)
+            nivel_formatado, dh_ultima_formatada = nivel_recente(df_nivel, st.session_state["fuso_selecionado"], lang)
+            nivel_valor = float(nivel_formatado.replace(",", ".").replace("&nbsp;m", ""))
+            situacao, cor_situacao = situacao_nivel(nivel_valor, cota_alerta, cota_inundacao)
+
+            rotulo_situacao = {
+                    "Normal": {"pt": "Normal", "en": "Normal level"},
+                    "Alerta": {"pt": "Em alerta", "en": "Alert"},
+                    "Inundação": {"pt": "Inundação", "en": "Flood"},
+                    "Indisponível": {"pt": "Indisponível", "en": "Unavailable"}
+                }
+            mensagem_situacao = rotulo_situacao[situacao][lang["lang_code"]]
+
+            with col_situacao:
+                    st.markdown(f"""
+                        <div style='text-align: center;'>
+                            <p style='font-size: 22px; margin: 0;'>
+                                Situação do nível:
+                                <span style='font-weight: bold; color: {cor_situacao};'>{mensagem_situacao}</p>
+                        </div>
+                    """, unsafe_allow_html=True)
+
+            # 🔹 Nível recente
+            with col_nivel:
 
                     st.markdown(f"""
                         <div style='text-align: center;'>
-                            <p style='font-size: 17px; margin: 0;'>{lang['recent_level'] + ':'} <span style='color:{cor_texto};'>{nivel_formatado}</span></p>
-                        <div style='text-align: center;'>
+                            <p style='font-size: 22px; margin: 0;'>
+                                {lang['recent_level']}:
+                                <span style='font-weight: bold; color: {cor_texto};'>{nivel_formatado}</span>
+                            </p>
                             <p style='font-size: 13px; margin: 0;'>{lang['update'] + ':'} {dh_ultima_formatada}</p>
                         </div>
-                        """, unsafe_allow_html=True)
-                    
-                    st.markdown("<br>", unsafe_allow_html=True)
+                    """, unsafe_allow_html=True)
 
-        with col_grafico:
-            with st.container():
+            # 🔹 Velocidade futura (placeholder)
+            with col_velocidade:
+                    st.markdown(f"""
+                        <div style='text-align: center;'>
+                            <p style='font-size: 22px; margin: 0;'>
+                                Velocidade:
+                                <span style='font-weight: bold; color: gray;'>Em breve</p>
+                        </div>
+                    """, unsafe_allow_html=True)
 
-                dados_filtrados = filtrar_dados(st.session_state["dados_estacao"], st.session_state["dados_inicio"],
-                    st.session_state["dados_fim"], st.session_state["fuso_selecionado"])
-                cota_alerta, cota_inundacao = cotas_notaveis(estacao_selecionada, estacoes_info)
-
-                plotar_grafico(url_estacao, estacoes_info, dados_filtrados, estacao_selecionada, cota_alerta, cota_inundacao, 
-                               st.session_state["dados_inicio"], st.session_state["dados_fim"], lang)
+            st.markdown("<br>", unsafe_allow_html=True)        
 
     _, col_modo, col_fuso, _ = st.columns([0.5, 1, 1.3, 0.5], gap="small", vertical_alignment="top")
 
@@ -645,20 +849,6 @@ def main(estacoes_info, estacao_padrao, logotipo, html_logo, lang):
         with col_fuso:
 
             fuso_horario(lang)
-
-# No início da execução, restauramos a estação selecionada
-def restaurar_estacao_e_periodo():
-    if "estacao_selecionada" in st.session_state:
-        estacao_selecionada = st.session_state["estacao_selecionada"]
-
-    if "ultimo_periodo" in st.session_state:
-        ultimo_periodo = st.session_state["ultimo_periodo"]
-
-    # 🔹 Garante que o período anterior seja restaurado corretamente
-    if "ultimo_periodo_temp" in st.session_state:
-        st.session_state["ultimo_periodo"] = st.session_state.pop("ultimo_periodo_temp")         
-        
-restaurar_estacao_e_periodo()
 
 # [TEMPORÁRIAMENTE DESATIVADA (QUIÇÁ PARA SEMPRE)] Função para filtrar os dados pelo período selecionado
 def filtrar_dados(df, dados_inicio, dados_fim, fuso_selecionado):
