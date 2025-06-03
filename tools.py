@@ -176,6 +176,12 @@ def carregar_dados(url):
 
         return df
 
+# Retorna uma cópia do DataFrame sem a última hora de dados (evitar o chicoteamento)
+def corte_ultima_1h(df):
+
+    limite = df['datetime_utc'].max() - pd.Timedelta(hours=1)
+    return df[df['datetime_utc'] <= limite]
+
 # Função do seletor de fuso
 def fuso_horario(lang):
 
@@ -205,35 +211,63 @@ def fuso_horario(lang):
 
     return fuso_selecionado
 
-# Função para formatar o nível recente via mediana
-def nivel_recente(df, fuso_selecionado, lang):
+# Função que calcula o nível recente (levando em conta os ajustes para o cálculo de velocidade)
+def nivel_recente(df, fuso_selecionado, lang, modo="mediana"):
 
     # Define o limite de tempo para as últimas 6 horas
     limite_tempo = df["datetime_utc"].max() - timedelta(hours=6)
     ultimas_6h = df[df["datetime_utc"] >= limite_tempo]
 
-    # Caso não hajam dados suficientes
-    if ultimas_6h.empty:
+    if ultimas_6h.empty or len(ultimas_6h) < 2:
+        return "Indisp.", "Indisp."
 
-        # Interrompe a execução caso os dados não sejam suficientes para a mediana de 6h.
-        st.stop()
-
-    # Calcula o nível mediano e a data/hora da última medida
-    nivel_mediana = ultimas_6h["water_level(m)"].median()
+    # Ajusta o horário da última medição para o fuso selecionado
     dh_ultima = ultimas_6h["datetime_utc"].max().tz_convert(fuso_selecionado)
 
-    # Formata o nível com vírgula, incluindo a unidade de medida e a data/hora
-    
-    nivel_formatado = f"{nivel_mediana:.2f}&nbsp;m".replace('.', ',')
+    if modo == "ajustado":
+
+        agora_utc = pd.Timestamp.utcnow()
+        
+        ultimas_6h["delta_horas"] = (ultimas_6h["datetime_utc"] - agora_utc).dt.total_seconds() / 3600
+
+        x = ultimas_6h["delta_horas"].values
+        y = ultimas_6h["water_level(m)"].values
+
+        coef = np.polyfit(x, y, deg=1)
+
+        inclinacao = coef[0]  # velocidade m/h
+        nivel_ajustado = coef[1]  # valor no instante atual (t=0)
+        nivel_formatado = f"{nivel_ajustado:.2f}&nbsp;m".replace('.', ',')
+
+    else:
+        nivel_mediana = ultimas_6h["water_level(m)"].median()
+        nivel_formatado = f"{nivel_mediana:.2f}&nbsp;m".replace('.', ',')
 
     if lang["lang_code"] == "en":
-
         dh_ultima_formatada = dh_ultima.strftime('%m/%d/%Y - %I:%M %p')
 
     else:
         dh_ultima_formatada = dh_ultima.strftime('%d/%m/%Y - %H:%M')
 
     return nivel_formatado, dh_ultima_formatada
+
+#Função que calcula a velocidade de variação recente
+def calcular_velocidade(df):
+
+    agora_utc = pd.Timestamp.utcnow()
+    limite_6h = agora_utc - pd.Timedelta(hours=6)
+    df_filtrado = df[df["datetime_utc"] >= limite_6h]
+
+    if df_filtrado.empty or len(df_filtrado) < 2:
+        return "Indisp."
+
+    df_filtrado["delta_horas"] = (df_filtrado["datetime_utc"] - agora_utc).dt.total_seconds() / 3600
+    x = df_filtrado["delta_horas"].values
+    y = df_filtrado["water_level(m)"].values
+    coef = np.polyfit(x, y, deg=1)
+    inclinacao = coef[0]
+
+    return f"{inclinacao:+.2f} m/h".replace('.', ',')
 
 # Verifica o status de funcionamento da estação com base na última medição
 def verificar_status_estacao(ultimo_registro_utc):
@@ -345,7 +379,7 @@ def exibir_mapa_estacao(estacao):
 
         deck = pdk.Deck(layers=[layer], initial_view_state=view_state, tooltip=tooltip)
 
-        st.pydeck_chart(deck, use_container_width=True)
+        st.pydeck_chart(deck, use_container_width=True)   
 
 # Função que configura a exibição do gráfico
 def plotar_grafico(url, estacoes_info, dados_filtrados, estacao_selecionada, cota_alerta, cota_inundacao, dados_inicio, dados_fim, lang):
@@ -462,6 +496,105 @@ def plotar_grafico(url, estacoes_info, dados_filtrados, estacao_selecionada, cot
     }
 
     # Exibe o gráfico
+    st.plotly_chart(fig, use_container_width=True, config=config)
+
+# Função que configura a exibição do gráfico de sobreposição (exclusivo para tidesat-estrela)
+def plotar_sobreposicao_estrela(estacoes_info, lang):
+
+    # Pega o fuso e o período selecionado
+    fuso = st.session_state["fuso_selecionado"]
+    data_inicio = st.session_state["dados_inicio"]
+    data_fim = st.session_state["dados_fim"]
+
+    estacoes_alvo = ["EST1", "EST2", "EST3", "EST6"]
+
+    tracos = []
+    todos_valores = []
+
+    cor_linha_padrao, _, _, _, _ = obter_tema()
+
+    cores = {
+        "EST2": "blue",
+        "EST3": "green",
+        "EST6": "red"
+    }
+    for cod in estacoes_alvo:
+
+        est = estacoes_info.get(cod)
+
+        if not est:
+
+            continue
+
+        try:
+
+            df = carregar_dados(est["url"])
+            df['datetime_ajustado'] = df['datetime_utc'].dt.tz_convert(fuso)
+            df_filtrado = filtrar_dados(df, data_inicio, data_fim, fuso)
+
+            todos_valores.extend(df_filtrado["water_level(m)"].tolist())
+
+            cor = cores.get(cod, cor_linha_padrao)
+
+            tracos.append(go.Scatter(
+                x=np.array(df_filtrado["datetime_ajustado"]),
+                y=df_filtrado["water_level(m)"],
+                mode='lines',
+                name=est["descricao"],
+                line=dict(color=cor, width=2)
+            ))
+
+        except Exception as e:
+            st.warning(f"Erro ao carregar dados de {cod}: {e}")
+
+    if not tracos:
+        st.error("Nenhum dado foi carregado para as estações selecionadas.")
+        return
+
+    # Eixo Y: ajuste para últimos 24h ou período total
+    y_range = None
+    delta_periodo = pd.to_datetime(data_fim) - pd.to_datetime(data_inicio)
+
+    if delta_periodo == timedelta(hours=24):
+        
+       val_min = min(todos_valores)
+       val_max = max(todos_valores)
+       y_range = [max(0, val_min - 0.5), val_max + 0.5]
+
+    elif delta_periodo >= timedelta(days=7):
+
+        y_range = [min(todos_valores), max(todos_valores)]
+
+    fig = go.Figure(data=tracos)
+
+    fig.update_layout(
+        xaxis_title="Data" if lang["lang_code"] == "pt" else "Date",
+        yaxis_title="Nível (m)" if lang["lang_code"] == "pt" else "Water level (m)",
+        font={'size': 18},
+        height=430,
+        margin=dict(l=40, r=0.1, t=40, b=40),
+        legend=dict(
+            orientation='v',
+            yanchor='bottom',
+            y=1.01,
+            xanchor='left',
+            x=0.04,
+            font=dict(size=11),
+        )
+    )
+
+    fig.update_xaxes(fixedrange=False)
+    fig.update_yaxes(fixedrange=True)
+
+    if y_range:
+        fig.update_yaxes(range=y_range, fixedrange=True)
+
+    config = {
+        "scrollZoom": True,
+        "responsive": True,
+        "displaylogo": False
+    }
+
     st.plotly_chart(fig, use_container_width=True, config=config)
 
 # Função para obter as configurações do tema
@@ -634,6 +767,22 @@ def main(estacoes_info, estacao_padrao, logotipo, html_logo, lang):
                     dados_inicio = dados['datetime_ajustado'].min().date()
                     dados_fim = dados['datetime_ajustado'].max().date()
 
+                    # Limita o início ao primeiro dado da EST6, apenas para o app de Estrela
+                    from main_estrela_config import ESTACOES_ESTRELA
+                    
+                    if estacoes_info == ESTACOES_ESTRELA:
+                        try:
+                            df_est6 = carregar_dados(ESTACOES_ESTRELA["EST6"]["url"])
+                            df_est6["datetime_ajustado"] = df_est6["datetime_utc"].dt.tz_convert(st.session_state["fuso_selecionado"])
+                            inicio_est6 = df_est6["datetime_ajustado"].min().date()
+
+                            # Só ajusta se estiver iniciando com o período total (primeira execução)
+                            if dados_inicio < inicio_est6:
+                                dados_inicio = inicio_est6
+
+                        except Exception as e:
+                            st.warning(f"Não foi possível ajustar a data inicial com base na EST6: {e}")
+
                     if pd.isna(dados_inicio) or pd.isna(dados_fim):
                         st.warning("A estação selecionada ainda não possui dados suficientes para exibição.")
                         st.stop()
@@ -700,6 +849,21 @@ def main(estacoes_info, estacao_padrao, logotipo, html_logo, lang):
                             st.session_state["dados_fim"] = dados_fim
                             st.session_state["ultimo_periodo"] = "inteiro"
 
+                            from main_estrela_config import ESTACOES_ESTRELA
+                    
+                            if estacoes_info == ESTACOES_ESTRELA:
+                                try:
+                                    df_est6 = carregar_dados(ESTACOES_ESTRELA["EST6"]["url"])
+                                    df_est6["datetime_ajustado"] = df_est6["datetime_utc"].dt.tz_convert(st.session_state["fuso_selecionado"])
+                                    inicio_est6 = df_est6["datetime_ajustado"].min().date()
+
+                                    # Só ajusta se estiver iniciando com o período total (primeira execução)
+                                    if dados_inicio < inicio_est6:
+                                        dados_inicio = inicio_est6
+
+                                except Exception as e:
+                                    st.warning(f"Não foi possível ajustar a data inicial com base na EST6: {e}")
+
                     with col_sete:
                         if st.button(f"{lang['last_7_days']}", use_container_width=True):
                             st.session_state["dados_inicio"] = (dados['datetime_ajustado'].max() - timedelta(days=7)).date()
@@ -725,12 +889,30 @@ def main(estacoes_info, estacao_padrao, logotipo, html_logo, lang):
                 # ============================ GRÁFICO ============================
                 with aba_grafico:
 
-                    dados_filtrados = filtrar_dados(st.session_state["dados_estacao"], st.session_state["dados_inicio"],
-                        st.session_state["dados_fim"], st.session_state["fuso_selecionado"])
-                    cota_alerta, cota_inundacao = cotas_notaveis(estacao_selecionada, estacoes_info)
+                    # Se for o app de Estrela e o cliente desejar sobreposição
+                    usar_sobreposicao = False
 
-                    plotar_grafico(url_estacao, estacoes_info, dados_filtrados, estacao_selecionada, cota_alerta, cota_inundacao, 
-                                st.session_state["dados_inicio"], st.session_state["dados_fim"], lang)
+                    from main_estrela_config import ESTACOES_ESTRELA
+
+                    if estacoes_info == ESTACOES_ESTRELA:
+                        usar_sobreposicao = st.toggle("Comparar estações", value=False)
+
+                    if usar_sobreposicao:
+                        plotar_sobreposicao_estrela(estacoes_info, lang)
+
+                    else:    
+
+                        dados_filtrados = filtrar_dados(st.session_state["dados_estacao"], 
+                                                        st.session_state["dados_inicio"],
+                                                        st.session_state["dados_fim"], st.session_state["fuso_selecionado"])
+                        
+                        # Aplica o corte de 1h apenas para fins gráficos
+                        dados_filtrados = corte_ultima_1h(dados_filtrados)
+
+                        cota_alerta, cota_inundacao = cotas_notaveis(estacao_selecionada, estacoes_info)
+
+                        plotar_grafico(url_estacao, estacoes_info, dados_filtrados, estacao_selecionada, cota_alerta, cota_inundacao, 
+                                    st.session_state["dados_inicio"], st.session_state["dados_fim"], lang)
                     
                 # ============================ INFO ============================
                 with aba_info:
@@ -796,9 +978,15 @@ def main(estacoes_info, estacao_padrao, logotipo, html_logo, lang):
 
             # 🔹 Situação do nível
             cota_alerta, cota_inundacao = cotas_notaveis(estacao_selecionada, estacoes_info)
+
             df_nivel = carregar_dados(url_estacao)
-            nivel_formatado, dh_ultima_formatada = nivel_recente(df_nivel, st.session_state["fuso_selecionado"], lang)
+
+            nivel_formatado, dh_ultima_formatada = nivel_recente(df_nivel, st.session_state["fuso_selecionado"], lang, modo="ajustado")
+
+            velocidade_formatada = calcular_velocidade(df_nivel)
+
             nivel_valor = float(nivel_formatado.replace(",", ".").replace("&nbsp;m", ""))
+
             situacao, cor_situacao = situacao_nivel(nivel_valor, cota_alerta, cota_inundacao)
 
             rotulo_situacao = {
@@ -837,11 +1025,10 @@ def main(estacoes_info, estacao_padrao, logotipo, html_logo, lang):
                         <div style='text-align: center;'>
                             <p style='font-size: 22px; margin: 0;'>
                                 Velocidade:
-                                <span style='font-weight: bold; color: gray;'>Em breve</p>
+                                <span style='font-weight: bold; color: {cor_texto};'>{velocidade_formatada}</span>
+                            </p>
                         </div>
-                    """, unsafe_allow_html=True)
-
-            st.markdown("<br>", unsafe_allow_html=True)        
+                    """, unsafe_allow_html=True)    
 
     _, col_modo, col_fuso, _ = st.columns([0.5, 1, 1.3, 0.5], gap="small", vertical_alignment="top")
 
