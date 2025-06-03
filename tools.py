@@ -1043,30 +1043,7 @@ def main(estacoes_info, estacao_padrao, logotipo, html_logo, lang):
 
             fuso_horario(lang)
 
-# [TEMPORÁRIAMENTE DESATIVADA (QUIÇÁ PARA SEMPRE)] Função para filtrar os dados pelo período selecionado
-def filtrar_dados(df, dados_inicio, dados_fim, fuso_selecionado):
 
-    # Convertendo dados_inicio e dados_fim para datetime no fuso selecionado
-    dados_inicio_dt = pd.to_datetime(dados_inicio).tz_localize(fuso_selecionado)
-    dados_fim_dt = pd.to_datetime(dados_fim).tz_localize(fuso_selecionado)
-
-    # Obtendo o intervalo completo dos dados
-    dados_inicio_total = df['datetime_ajustado'].min()
-    dados_fim_total = df['datetime_ajustado'].max()
-
-    # Verifica se o período solicitado é o mesmo que o intervalo completo
-    if dados_inicio_dt == dados_inicio_total and dados_fim_dt == dados_fim_total:
-        
-        # Retorna o DataFrame original sem filtrar
-        return df
-
-    # Aplica o filtro nos dados
-    filtro = (df['datetime_ajustado'] >= dados_inicio_dt) & (df['datetime_ajustado'] < dados_fim_dt + timedelta(days=1))
-
-    return df.loc[filtro]
-
-# (TEMPORÁRIAMENTE DESATIVADA) Função para configurar a imagem e o mapa da estação selecionada
-def imagem_mapa_estacao(estacao_nome, estacoes_info):
 
     _, col_img_estac, _, col_mapa, _ = st.columns([0.1, 2, 0.5, 4, 0.9])
 
