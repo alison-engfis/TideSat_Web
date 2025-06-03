@@ -618,6 +618,7 @@ def main(estacoes_info, estacao_padrao, logotipo, html_logo, lang):
                                                     format_func=lambda code :estacoes_info[code]["descricao"],
                                                     index=list(estacoes_info.keys()).index(estacao_padrao),
                                                     label_visibility='collapsed')
+                   
                     
                     st.session_state["estacao_selecionada"] = estacao_selecionada
 
@@ -637,6 +638,34 @@ def main(estacoes_info, estacao_padrao, logotipo, html_logo, lang):
                         st.warning("A estação selecionada ainda não possui dados suficientes para exibição.")
                         st.stop()
 
+                col_situacao = st.columns([1])[0]
+
+                with col_situacao:
+
+                    # Obtém o último dado da estação selecionada
+                    ultimo_dado = dados["datetime_utc"].max()
+                    status_estacao = verificar_status_estacao(ultimo_dado)
+
+                    # Define cor visual do status
+                    cor_status = "green" if status_estacao == "Ativa" else "red"
+
+                    # Tradução para multilíngue
+                    texto_status = "Status:" if lang["lang_code"] == "pt" else "Station status:"
+                    valor_status = status_estacao if lang["lang_code"] == "pt" else ("Active" if status_estacao == "Ativa" else "Inactive")
+
+                    # Exibe o status
+                    st.markdown(f"""
+                        <div style='text-align: center;'>
+                            <p style='font-size: 20px; margin: 0;'>
+                                {texto_status}
+                            <span style='font-weight: bold; color: {cor_status};'>{valor_status}</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    
+                st.markdown("<br>" * 2, unsafe_allow_html=True) 
+                
+                
 
                 col_inicio, col_fim = st.columns(2, gap="small")
 
@@ -687,34 +716,11 @@ def main(estacoes_info, estacao_padrao, logotipo, html_logo, lang):
 
                 st.markdown("<br>", unsafe_allow_html=True)            
 
-                col_situacao = st.columns([1])[0]
-
-                with col_situacao:
-
-                    # Obtém o último dado da estação selecionada
-                    ultimo_dado = dados["datetime_utc"].max()
-                    status_estacao = verificar_status_estacao(ultimo_dado)
-
-                    # Define cor visual do status
-                    cor_status = "green" if status_estacao == "Ativa" else "red"
-
-                    # Tradução para multilíngue
-                    texto_status = "Status da estação:" if lang["lang_code"] == "pt" else "Station status:"
-                    valor_status = status_estacao if lang["lang_code"] == "pt" else ("Active" if status_estacao == "Ativa" else "Inactive")
-
-                    # Exibe o status de forma centralizada
-                    st.markdown(f"""
-                        <div style='text-align: center;'>
-                            <p style='font-size: 20px; margin: 0;'>{texto_status}</p>
-                            <p style='font-size: 22px; font-weight: bold; color: {cor_status};'>{valor_status}</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-
         with col_grafico:
 
             with st.container(border=True):
 
-                aba_grafico, aba_info, aba_mapa, aba_estatisticas = st.tabs(["📈 Gráfico", "ℹ️ Info", "🗺️ Mapa", "📊 Estatísticas"])
+                aba_grafico, aba_info, aba_mapa, aba_estatisticas = st.tabs(["Gráfico", "Info", "Mapa", "Estatísticas"])
 
                 # ============================ GRÁFICO ============================
                 with aba_grafico:
